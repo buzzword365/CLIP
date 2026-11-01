@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>app.clip.recorder</string>
+<key>CFBundleExecutable</key><string>CLIP</string>
+<key>CFBundleName</key><string>CLIP</string>
+<key>CFBundleDisplayName</key><string>CLIP</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleIconFile</key><string>CLIP</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>CLIP records your microphone only if you turn on microphone recording.</string>
+<key>NSScreenCaptureUsageDescription</key><string>CLIP needs screen recording access to save the last moments of gameplay when you press Cmd-Shift-S.</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.video</string>
+</dict></plist>

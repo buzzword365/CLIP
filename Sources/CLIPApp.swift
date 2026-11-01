@@ -284,6 +284,12 @@ struct CLIPMenu: View {
 final class CLIPAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        // The resource icon is explicitly applied at runtime so Dock does not
+        // retain the generic placeholder from the app's first unsigned builds.
+        if let url = Bundle.main.url(forResource: "CLIPLogo", withExtension: "png"),
+           let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
         CLIPModel.shared.openAppWindow()
     }
 

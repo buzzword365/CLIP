@@ -3,6 +3,14 @@ import AppKit
 import AVFoundation
 import AVKit
 
+private enum CLIPArtwork {
+    static let icon: NSImage = {
+        if let url = Bundle.main.url(forResource: "CLIPLogo", withExtension: "png"),
+           let image = NSImage(contentsOf: url) { return image }
+        return NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+    }()
+}
+
 private enum CLIPStyle {
     static let accent = Color(red: 0.53, green: 0.76, blue: 1.0)
     static let lavender = Color(red: 0.70, green: 0.64, blue: 1.0)
@@ -280,7 +288,7 @@ struct CLIPView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
-                Image("CLIPLogo")
+                Image(nsImage: CLIPArtwork.icon)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()

@@ -14,6 +14,7 @@ SOURCES=(
   "$ROOT/Sources/InteractionStyles.swift"
   "$ROOT/Sources/NativeClipPlayer.swift"
   "$ROOT/Sources/ReplayEngine.swift"
+  "$ROOT/Sources/ReplayWindowPolicy.swift"
 )
 
 echo "Compiling CLIP for Apple Silicon…"

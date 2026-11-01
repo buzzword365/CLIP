@@ -22,11 +22,15 @@ private final class Segment {
     let microphone: AVAssetWriterInput?
     let start: CMTime
     var last: CMTime
+    let startedAt: TimeInterval
+    var endedAt: TimeInterval
     init(url: URL, writer: AVAssetWriter, video: AVAssetWriterInput,
-         system: AVAssetWriterInput?, microphone: AVAssetWriterInput?, start: CMTime) {
+         system: AVAssetWriterInput?, microphone: AVAssetWriterInput?,
+         start: CMTime, uptime: TimeInterval) {
         self.url = url; self.writer = writer; self.video = video
         self.system = system; self.microphone = microphone
         self.start = start; self.last = start
+        self.startedAt = uptime; self.endedAt = uptime
     }
     var length: Double { max(0, CMTimeGetSeconds(last - start)) }
 }
@@ -34,13 +38,22 @@ private final class Segment {
 final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     var onClip: ((Result<URL, Error>) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onStalled: (() -> Void)?
     private let options: CaptureOptions
     private var replaySeconds: Int
     private let queue = DispatchQueue(label: "com.clip.encoder", qos: .userInitiated)
     private var stream: SCStream?
     private var active: Segment?
     private var finished: [Segment] = []
-    private var pending: [Int] = []
+    private struct ReplayRequest {
+        let seconds: Int
+        let requestedAt: TimeInterval
+    }
+    private var pending: [ReplayRequest] = []
+    private var watchdog: DispatchSourceTimer?
+    private var captureStartedAt: TimeInterval = 0
+    private var lastCompleteScreenAt: TimeInterval = 0
+    private var stalledReported = false
     private var busyExports: Set<URL> = []
     private var isStopping = false
     private var pendingFinalizations = 0
@@ -119,6 +132,28 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         if options.microphone { try newStream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue) }
         stream = newStream
         try await newStream.startCapture()
+        queue.async {
+            self.captureStartedAt = ProcessInfo.processInfo.systemUptime
+            self.installWatchdog()
+        }
+    }
+
+    private func installWatchdog() {
+        watchdog?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 5, repeating: .seconds(3))
+        timer.setEventHandler { [weak self] in
+            guard let self, !self.isStopping, !self.stalledReported else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            let mostRecent = self.lastCompleteScreenAt > 0
+                ? self.lastCompleteScreenAt : self.captureStartedAt
+            guard mostRecent > 0, now - mostRecent > 9 else { return }
+            self.stalledReported = true
+            NSLog("CLIP capture stalled: no fresh video for %.1fs", now - mostRecent)
+            DispatchQueue.main.async { self.onStalled?() }
+        }
+        watchdog = timer
+        timer.resume()
     }
 
     func stop() async {
@@ -127,6 +162,8 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             queue.async {
                 self.isStopping = true
+                self.watchdog?.cancel()
+                self.watchdog = nil
                 self.closeSegment(onClosed: { continuation.resume() })
             }
         }
@@ -141,7 +178,9 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func saveLastSeconds() {
         queue.async {
-            self.pending.append(self.replaySeconds)
+            self.pending.append(ReplayRequest(
+                seconds: self.replaySeconds,
+                requestedAt: ProcessInfo.processInfo.systemUptime))
             if self.active != nil {
                 self.closeSegment()
             } else {
@@ -156,16 +195,22 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard buffer.isValid, CMSampleBufferDataIsReady(buffer) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
         if type == .screen {
             guard let frame = CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
                   let rawStatus = frame.first?[.status] as? Int,
                   rawStatus == SCFrameStatus.complete.rawValue else { return }
+            lastCompleteScreenAt = now
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
         guard pts.isValid else { return }
         if type == .screen {
-            if let segment = active, CMTimeGetSeconds(pts - segment.start) >= 3.0 {
-                closeSegment()
+            if let segment = active {
+                // Never bridge a long capture interruption inside one MOV file.
+                if now - segment.endedAt > 1.75 ||
+                   CMTimeGetSeconds(pts - segment.start) >= 3.0 {
+                    closeSegment()
+                }
             }
             if active == nil && !isStopping {
                 do { active = try createSegment(start: pts) }
@@ -177,7 +222,7 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         if type == .screen {
             if segment.video.isReadyForMoreMediaData {
                 if !segment.video.append(buffer) { report(segment.writer.error?.localizedDescription ?? "Video encode failed.") }
-                else { segment.last = pts }
+                else { segment.last = pts; segment.endedAt = now }
             }
         } else if type == .audio {
             if let input = segment.system, input.isReadyForMoreMediaData { _ = input.append(buffer) }
@@ -222,7 +267,8 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         writer.startSession(atSourceTime: start)
         return Segment(url: url, writer: writer, video: video, system: system,
-                       microphone: microphone, start: start)
+                       microphone: microphone, start: start,
+                       uptime: ProcessInfo.processInfo.systemUptime)
     }
 
     // One segment can be encoding while another is already recording.
@@ -273,12 +319,24 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     private func pruneBuffer() {
-        var duration = finished.reduce(0) { $0 + $1.length }
+        let now = ProcessInfo.processInfo.systemUptime
         let keep = Double(max(replaySeconds, 30) + 14)
+        // A completed segment's file can be valid even after ScreenCaptureKit
+        // has stopped delivering frames. Expire it by actual elapsed time.
+        while let first = finished.first,
+              first.endedAt < now - keep {
+            finished.removeFirst()
+            if !busyExports.contains(first.url) {
+                try? FileManager.default.removeItem(at: first.url)
+            }
+        }
+        var duration = finished.reduce(0) { $0 + $1.length }
         while finished.count > 1 && duration > keep {
             let oldest = finished.removeFirst()
             duration -= oldest.length
-            if !busyExports.contains(oldest.url) { try? FileManager.default.removeItem(at: oldest.url) }
+            if !busyExports.contains(oldest.url) {
+                try? FileManager.default.removeItem(at: oldest.url)
+            }
         }
     }
 
@@ -286,24 +344,29 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         guard !pending.isEmpty else { return }
         let requests = pending
         pending.removeAll()
-        for seconds in requests {
-            var chosen: [Segment] = []
-            var duration = 0.0
-            for segment in finished.reversed() {
-                chosen.insert(segment, at: 0)
-                duration += segment.length
-                if duration >= Double(seconds) { break }
+        for request in requests {
+            let window = finished.map {
+                ReplaySegmentInfo(startedAt: $0.startedAt, endedAt: $0.endedAt,
+                                  mediaDuration: $0.length)
             }
-            guard !chosen.isEmpty else {
-                DispatchQueue.main.async { self.onClip?(.failure(self.err("No replay footage is available yet."))) }
+            guard let indices = ReplayWindowPolicy.choose(
+                window, seconds: request.seconds, requestedAt: request.requestedAt)
+            else {
+                let message = "No fresh \\(request.seconds)-second replay is ready. " +
+                    "CLIP will not save older footage. Capture may be resuming after a pause."
+                DispatchQueue.main.async { self.onClip?(.failure(self.err(message))) }
+                NSLog("CLIP rejected stale/short replay at uptime %.2f; latest %.2f",
+                      request.requestedAt, self.finished.last?.endedAt ?? 0)
                 continue
             }
+            let chosen = indices.map { finished[$0] }
             let urls = chosen.map(\.url)
             busyExports.formUnion(urls)
             let output = clipsDirectory.appendingPathComponent(
-                "CLIP " + Self.fileDateFormatter.string(from: Date()) + " " + UUID().uuidString.prefix(5) + ".mp4")
+                "CLIP " + Self.fileDateFormatter.string(from: Date()) + " " +
+                UUID().uuidString.prefix(5) + ".mp4")
             DispatchQueue.global(qos: .userInitiated).async {
-                Self.export(segments: chosen, seconds: seconds, output: output) { result in
+                Self.export(segments: chosen, seconds: request.seconds, output: output) { result in
                     self.queue.async {
                         self.busyExports.subtract(urls)
                         self.pruneBuffer()

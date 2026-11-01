@@ -8,20 +8,21 @@ Built with **SwiftUI**, **ScreenCaptureKit**, and **AVFoundation**. No accounts,
 
 ## Features
 
-- **Instant replay:** Press **⌘ Shift S** to save your recent footage as an MP4.
+- **Instant replay:** Press **⌘ Shift S** to save your recent footage as an MP4. CLIP verifies that the buffer is fresh rather than exporting old footage again.
 - **Rotary replay dial:** Choose 15 seconds, 30 seconds, 1, 2, 3, 5, or 10 minutes.
 - **Audio control:** Include system/game audio; optionally enable microphone recording.
 - **Quality settings:** 720p, 1080p, 1440p or native resolution; 30 or 60 FPS targets.
 - **Clip library:** Browse thumbnails, preview clips, show videos in Finder, and move unwanted recordings to Trash.
 - **Glass UI:** Translucent controls, trackpad haptics where supported, motion accessibility support.
 - **Menu bar:** Background capture, quick save/pause, and launch-at-login preference.
+- **Capture recovery:** Detects when screen frames stop updating, attempts to reconnect, and avoids a misleading duplicate clip. If capture stops repeatedly (for example while the Mac is locked), open CLIP and press Start after waking it.
 - **Local files:** Saved videos live in `~/Movies/CLIP`.
 
 > **Preview release:** CLIP is an early project, not a production-equivalent replacement for Medal. Current capture uses the first available display rather than game-specific capture. Some games, protected videos, and system configurations may not capture perfectly. Microphone capture is selectable but has not been extensively field-tested.
 
 ## Download and install
 
-Get the latest **CLIP-macOS-arm64.zip** from [Releases](../../releases).
+Get the latest **CLIP-macOS-arm64** ZIP from [Releases](../../releases).
 
 1. Unzip the download and move **CLIP.app** to **Applications**.
 2. Open CLIP. On first launch, macOS may block the app because this preview build is **not Apple-notarized**. Review the application and use macOS **Privacy & Security → Open Anyway** if you trust this release.

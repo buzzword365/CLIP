@@ -54,6 +54,7 @@ final class CLIPModel: ObservableObject {
     @Published var lastSaved = ""
     private var engine: ReplayEngine?
     private var hotkey: GlobalHotkey?
+    private var lastAutomaticRestartAt: TimeInterval = 0
     private var bootstrapped = false
 
     var saveFolder: URL {
@@ -128,6 +129,25 @@ final class CLIPModel: ObservableObject {
         capture.onFailure = { [weak self] error in
             self?.message = "Capture error: " + error
             self?.isSaving = false
+        }
+        capture.onStalled = { [weak self] in
+            guard let self, self.running, !self.busy else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            if self.lastAutomaticRestartAt > 0 &&
+               now - self.lastAutomaticRestartAt < 45 {
+                // Don't spin forever while the display is asleep or locked.
+                Task {
+                    await self.stop()
+                    self.message = "Screen capture paused: no new frames. Press Start after unlocking or waking your Mac."
+                }
+                return
+            }
+            self.lastAutomaticRestartAt = now
+            self.message = "Capture stopped updating. Reconnecting to the display…"
+            Task {
+                await self.stop()
+                await self.start()
+            }
         }
         do {
             try await capture.start()

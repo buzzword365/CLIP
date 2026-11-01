@@ -49,6 +49,8 @@ final class CLIPModel: ObservableObject {
     @Published var running = false
     @Published var busy = false
     @Published var isSaving = false
+    @Published var bufferedSeconds = 0
+    @Published var replayTargetSeconds = 30
     @Published var message = "Ready to capture"
     @Published var clips: [ClipItem] = []
     @Published var lastSaved = ""
@@ -95,6 +97,8 @@ final class CLIPModel: ObservableObject {
             fps: fps > 0 ? fps : 60,
             systemAudio: prefs.object(forKey: "systemAudio") as? Bool ?? true,
             microphone: prefs.object(forKey: "microphone") as? Bool ?? false)
+        bufferedSeconds = 0
+        replayTargetSeconds = config.seconds
         if config.microphone {
             let allowed = await AVCaptureDevice.requestAccess(for: .audio)
             guard allowed else {
@@ -122,13 +126,19 @@ final class CLIPModel: ObservableObject {
                 }
             case .failure(let error):
                 let diagnostic = error as NSError
-                self.message = "Clip failed (\(diagnostic.domain):\(diagnostic.code)): " + diagnostic.localizedDescription
+                self.message = diagnostic.domain == "CLIP" && diagnostic.code == 10
+                    ? diagnostic.localizedDescription
+                    : "Clip failed: " + diagnostic.localizedDescription
                 NSLog("CLIP export error: %@", String(describing: error))
             }
         }
         capture.onFailure = { [weak self] error in
             self?.message = "Capture error: " + error
             self?.isSaving = false
+        }
+        capture.onBufferProgress = { [weak self] available, required in
+            self?.bufferedSeconds = available
+            self?.replayTargetSeconds = required
         }
         capture.onStalled = { [weak self] in
             guard let self, self.running, !self.busy else { return }
@@ -169,6 +179,7 @@ final class CLIPModel: ObservableObject {
         let old = engine
         engine = nil
         running = false
+        bufferedSeconds = 0
         await old?.stop()
         message = "Capture paused"
         busy = false
@@ -225,6 +236,7 @@ final class CLIPModel: ObservableObject {
     }
 
     func setReplayDuration(_ seconds: Int) {
+        replayTargetSeconds = seconds
         engine?.setReplayDuration(seconds)
         if running {
             message = "Replay set to \(seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m"). Longer replays fill as recording continues."

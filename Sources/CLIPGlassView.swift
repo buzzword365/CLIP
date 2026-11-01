@@ -603,6 +603,22 @@ struct CLIPView: View {
                 Text("Instantly save your last \(durationLabel) of gameplay.")
                     .font(.system(size: 12.5))
                     .foregroundStyle(CLIPStyle.muted)
+                HStack(spacing: 7) {
+                    Image(systemName: model.bufferedSeconds >= model.replayTargetSeconds && model.running
+                          ? "checkmark.circle.fill" : "clock.arrow.circlepath")
+                        .foregroundStyle(model.bufferedSeconds >= model.replayTargetSeconds && model.running
+                                         ? Color.green : CLIPStyle.accent)
+                    Text(model.running
+                         ? (model.bufferedSeconds >= model.replayTargetSeconds
+                            ? "Replay ready"
+                            : "Buffering: \(model.bufferedSeconds)/\(model.replayTargetSeconds)s")
+                         : "Recording paused")
+                        .foregroundStyle(CLIPStyle.muted)
+                }
+                .font(.system(size: 11, weight: .medium))
+                .accessibilityLabel(model.running
+                    ? "\(model.bufferedSeconds) of \(model.replayTargetSeconds) replay seconds available"
+                    : "Recording paused")
                 HStack(spacing: 10) {
                     Button { model.saveReplay() } label: {
                         HStack(spacing: 7) {

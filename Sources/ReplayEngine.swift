@@ -39,6 +39,7 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     var onClip: ((Result<URL, Error>) -> Void)?
     var onFailure: ((String) -> Void)?
     var onStalled: (() -> Void)?
+    var onBufferProgress: ((Int, Int) -> Void)?
     private let options: CaptureOptions
     private var replaySeconds: Int
     private let queue = DispatchQueue(label: "com.clip.encoder", qos: .userInitiated)
@@ -141,10 +142,29 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private func installWatchdog() {
         watchdog?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 5, repeating: .seconds(3))
+        timer.schedule(deadline: .now() + 1, repeating: .seconds(1))
         timer.setEventHandler { [weak self] in
-            guard let self, !self.isStopping, !self.stalledReported else { return }
+            guard let self, !self.isStopping else { return }
             let now = ProcessInfo.processInfo.systemUptime
+            let window = self.finished.map {
+                ReplaySegmentInfo(startedAt: $0.startedAt, endedAt: $0.endedAt,
+                                  mediaDuration: $0.length)
+            } + (self.active.flatMap { segment in
+                segment.length > 0.1
+                    ? [ReplaySegmentInfo(startedAt: segment.startedAt,
+                                         endedAt: segment.endedAt,
+                                         mediaDuration: segment.length)] : nil
+            } ?? [])
+            let result = ReplayWindowPolicy.evaluate(window,
+                seconds: self.replaySeconds, requestedAt: now)
+            let available: Int
+            switch result {
+            case .ready: available = self.replaySeconds
+            case .warmingUp(let length, _): available = length
+            case .stalled: available = 0
+            }
+            DispatchQueue.main.async { self.onBufferProgress?(available, self.replaySeconds) }
+            guard !self.stalledReported else { return }
             let mostRecent = self.lastCompleteScreenAt > 0
                 ? self.lastCompleteScreenAt : self.captureStartedAt
             guard mostRecent > 0, now - mostRecent > 9 else { return }
@@ -349,14 +369,25 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
                 ReplaySegmentInfo(startedAt: $0.startedAt, endedAt: $0.endedAt,
                                   mediaDuration: $0.length)
             }
-            guard let indices = ReplayWindowPolicy.choose(
+            let selection = ReplayWindowPolicy.evaluate(
                 window, seconds: request.seconds, requestedAt: request.requestedAt)
-            else {
-                let message = "No fresh \\(request.seconds)-second replay is ready. " +
-                    "CLIP will not save older footage. Capture may be resuming after a pause."
+            let indices: [Int]
+            switch selection {
+            case .ready(let ready):
+                indices = ready
+            case .warmingUp(let available, let required):
+                let remaining = max(1, required - available)
+                let message = "Replay is filling: \(available) of \(required) seconds ready. " +
+                    "Keep recording for about \(remaining) more seconds, then try again."
                 DispatchQueue.main.async { self.onClip?(.failure(self.err(message))) }
-                NSLog("CLIP rejected stale/short replay at uptime %.2f; latest %.2f",
-                      request.requestedAt, self.finished.last?.endedAt ?? 0)
+                NSLog("CLIP replay not ready: %d/%d seconds (uptime %.2f)",
+                      available, required, request.requestedAt)
+                continue
+            case .stalled(let age):
+                let message = "No new screen footage for \(age) seconds. " +
+                    "CLIP is reconnecting; press Start if capture is paused."
+                DispatchQueue.main.async { self.onClip?(.failure(self.err(message))) }
+                NSLog("CLIP replay capture stale: %d seconds", age)
                 continue
             }
             let chosen = indices.map { finished[$0] }

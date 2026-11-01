@@ -15,7 +15,7 @@ Built with **SwiftUI**, **ScreenCaptureKit**, and **AVFoundation**. No accounts,
 - **Clip library:** Browse thumbnails, preview clips, show videos in Finder, and move unwanted recordings to Trash.
 - **Glass UI:** Translucent controls, trackpad haptics where supported, motion accessibility support.
 - **Menu bar:** Background capture, quick save/pause, and launch-at-login preference.
-- **Capture recovery:** Detects when screen frames stop updating, attempts to reconnect, and avoids a misleading duplicate clip. If capture stops repeatedly (for example while the Mac is locked), open CLIP and press Start after waking it.
+- **Capture recovery:** Detects when screen frames stop updating, attempts to reconnect, and avoids a misleading duplicate clip. The dashboard shows buffer readiness (for example, `17/30s`) and a friendly explanation when a full fresh clip is not yet ready. If capture stops repeatedly (for example while the Mac is locked), open CLIP and press Start after waking it.
 - **Local files:** Saved videos live in `~/Movies/CLIP`.
 
 > **Preview release:** CLIP is an early project, not a production-equivalent replacement for Medal. Current capture uses the first available display rather than game-specific capture. Some games, protected videos, and system configurations may not capture perfectly. Microphone capture is selectable but has not been extensively field-tested.

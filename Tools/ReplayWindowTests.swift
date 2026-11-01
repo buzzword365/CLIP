@@ -34,6 +34,15 @@ import Foundation
             guard age > 4 else { fatalError("Invalid stall age") }
             print("PASS old buffer reports a stalled capture")
         } else { fatalError("Expected stalled result") }
+        let short = ReplayWindowPolicy.availableNow(Array(clean.prefix(5)),
+                                                   seconds: 30, requestedAt: 1015.0)
+        guard short?.count == 5 else { fatalError("Fresh partial replay was not selectable") }
+        print("PASS save existing footage immediately, even before 30 seconds fill")
+        guard ReplayWindowPolicy.availableNow(clean, seconds: 30,
+                                              requestedAt: 1300.0) == nil else {
+            fatalError("Stale replay incorrectly permitted")
+        }
+        print("PASS stale partial replay rejected")
         print("ALL REPLAY FRESHNESS TESTS PASSED")
     }
 }

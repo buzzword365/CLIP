@@ -13,7 +13,10 @@ SOURCES=(
   "$ROOT/Sources/ReplayDurationDial.swift"
   "$ROOT/Sources/InteractionStyles.swift"
   "$ROOT/Sources/NativeClipPlayer.swift"
+  "$ROOT/Sources/ClipTrimEditor.swift"
+  "$ROOT/Sources/ClipTrimExporter.swift"
   "$ROOT/Sources/ReplayEngine.swift"
+  "$ROOT/Sources/CLIPFrameRetiming.swift"
   "$ROOT/Sources/ReplayWindowPolicy.swift"
 )
 

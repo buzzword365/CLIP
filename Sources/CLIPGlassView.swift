@@ -185,36 +185,9 @@ struct CLIPView: View {
         .preferredColorScheme(.dark)
         .tint(CLIPStyle.accent)
         .sheet(item: $selectedClip) { clip in
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(clip.name).font(.title3.weight(.semibold))
-                        Text(clip.date.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption).foregroundStyle(CLIPStyle.muted)
-                    }
-                    Spacer()
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([clip.url])
-                    }
-                    .buttonStyle(TactileGlassActionStyle())
-                    Button {
-                        selectedClip = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .buttonStyle(TactileGlassActionStyle())
-                    .keyboardShortcut(.cancelAction)
-                    .help("Close preview")
-                    .accessibilityLabel("Close clip preview")
-                }
-                NativeClipPlayer(url: clip.url)
-                    .frame(minWidth: 660, minHeight: 380)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-            .padding(22)
-            .frame(minWidth: 720, minHeight: 470)
-            .background(.regularMaterial)
+            ClipTrimEditor(clip: clip,
+                onClose: { selectedClip = nil },
+                onSaved: { _ in model.refreshClips() })
         }
         .confirmationDialog("Move this clip to Trash?", isPresented: Binding(
             get: { clipToDelete != nil },
@@ -566,7 +539,7 @@ struct CLIPView: View {
                             }
                             .buttonStyle(TactileClipCardStyle())
                             .contextMenu {
-                                Button("Play clip") { selectedClip = clip }
+                                Button("Open trim editor") { selectedClip = clip }
                                 Button("Show in Finder") {
                                     NSWorkspace.shared.activateFileViewerSelecting([clip.url])
                                 }
@@ -611,7 +584,7 @@ struct CLIPView: View {
                     Text(model.running
                          ? (model.bufferedSeconds >= model.replayTargetSeconds
                             ? "Replay ready"
-                            : "Buffering: \(model.bufferedSeconds)/\(model.replayTargetSeconds)s")
+                            : "Recording • \(model.bufferedSeconds)s available")
                          : "Recording paused")
                         .foregroundStyle(CLIPStyle.muted)
                 }

@@ -53,7 +53,14 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private var pending: [ReplayRequest] = []
     private var watchdog: DispatchSourceTimer?
     private var captureStartedAt: TimeInterval = 0
-    private var lastCompleteScreenAt: TimeInterval = 0
+    private var lastScreenEventAt: TimeInterval = 0
+    private var lastReportedProgress = -1
+    private var lastReportedTarget = -1
+    private var lastFrameWrittenAt: TimeInterval = 0
+    private var latestSourceFrameAt: TimeInterval = 0
+    private var latestSourceBuffer: CMSampleBuffer?
+    private var lastWrittenPTS = CMTime.invalid
+    private var screenIsBlankOrSuspended = false
     private var stalledReported = false
     private var busyExports: Set<URL> = []
     private var isStopping = false
@@ -142,10 +149,16 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private func installWatchdog() {
         watchdog?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 1, repeating: .seconds(1))
+        // ScreenCaptureKit does NOT generate new .complete frames while the
+        // desktop is unchanged. Keep writing the last visible image with fresh
+        // timestamps so a quiet/idle screen still has a real 30-second replay.
+        timer.schedule(deadline: .now() + .milliseconds(250),
+                       repeating: .milliseconds(250))
         timer.setEventHandler { [weak self] in
             guard let self, !self.isStopping else { return }
             let now = ProcessInfo.processInfo.systemUptime
+            self.appendStillFrameIfNeeded(at: now)
+
             let window = self.finished.map {
                 ReplaySegmentInfo(startedAt: $0.startedAt, endedAt: $0.endedAt,
                                   mediaDuration: $0.length)
@@ -163,17 +176,80 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             case .warmingUp(let length, _): available = length
             case .stalled: available = 0
             }
-            DispatchQueue.main.async { self.onBufferProgress?(available, self.replaySeconds) }
-            guard !self.stalledReported else { return }
-            let mostRecent = self.lastCompleteScreenAt > 0
-                ? self.lastCompleteScreenAt : self.captureStartedAt
-            guard mostRecent > 0, now - mostRecent > 9 else { return }
-            self.stalledReported = true
-            NSLog("CLIP capture stalled: no fresh video for %.1fs", now - mostRecent)
-            DispatchQueue.main.async { self.onStalled?() }
+            if available != self.lastReportedProgress ||
+               self.replaySeconds != self.lastReportedTarget {
+                self.lastReportedProgress = available
+                self.lastReportedTarget = self.replaySeconds
+                DispatchQueue.main.async {
+                    self.onBufferProgress?(available, self.replaySeconds)
+                }
+            }
+
+            // A genuinely stalled INITIAL stream is different from a static
+            // screen. After the first frame, continue buffering the last frame
+            // until an explicit blank/suspended status or stream error occurs.
+            if self.latestSourceBuffer == nil && !self.stalledReported &&
+                self.captureStartedAt > 0 &&
+                now - self.captureStartedAt > 15 {
+                self.stalledReported = true
+                DispatchQueue.main.async { self.onStalled?() }
+            }
         }
         watchdog = timer
         timer.resume()
+    }
+
+    private func appendStillFrameIfNeeded(at now: TimeInterval) {
+        guard !isStopping, !screenIsBlankOrSuspended,
+              let previous = latestSourceBuffer,
+              latestSourceFrameAt > 0,
+              now - lastFrameWrittenAt >= 0.20 else { return }
+        let sourcePTS = CMSampleBufferGetPresentationTimeStamp(previous)
+        guard sourcePTS.isValid else { return }
+        let elapsed = now - latestSourceFrameAt
+        guard elapsed >= 0 else { return }
+
+        // Give the last visible frame a new timestamp without duplicating
+        // the stale PTS that made AVAssetWriter reject static-screen samples.
+        let newPTS = sourcePTS + CMTime(seconds: elapsed,
+                                        preferredTimescale: 60000)
+        guard let copy = CLIPFrameRetiming.copy(previous, at: newPTS) else {
+            report("Could not extend the recording on an unchanged screen.")
+            return
+        }
+        appendVideoSample(copy, at: now)
+    }
+
+    private func appendVideoSample(_ buffer: CMSampleBuffer, at now: TimeInterval) {
+        guard !isStopping else { return }
+        let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
+        guard pts.isValid,
+              !lastWrittenPTS.isValid ||
+              CMTimeCompare(pts, lastWrittenPTS) > 0 else { return }
+
+        if let segment = active {
+            // A real interrupted capture must not be joined across a long gap.
+            if now - segment.endedAt > 2.5 ||
+                CMTimeGetSeconds(pts - segment.start) >= 3.0 {
+                closeSegment()
+            }
+        }
+        if active == nil {
+            do { active = try createSegment(start: pts) }
+            catch { report(error.localizedDescription); return }
+        }
+        guard let segment = active, segment.video.isReadyForMoreMediaData else {
+            return
+        }
+        if segment.video.append(buffer) {
+            segment.last = pts
+            segment.endedAt = now
+            lastFrameWrittenAt = now
+            lastWrittenPTS = pts
+        } else {
+            report(segment.writer.error?.localizedDescription ??
+                   "Unable to encode a replay video frame.")
+        }
     }
 
     func stop() async {
@@ -213,41 +289,49 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         DispatchQueue.main.async { self.onFailure?(error.localizedDescription) }
     }
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer,
+                of type: SCStreamOutputType) {
         guard buffer.isValid, CMSampleBufferDataIsReady(buffer) else { return }
         let now = ProcessInfo.processInfo.systemUptime
         if type == .screen {
-            guard let frame = CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-                  let rawStatus = frame.first?[.status] as? Int,
-                  rawStatus == SCFrameStatus.complete.rawValue else { return }
-            lastCompleteScreenAt = now
+            let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]]
+            let value = attachments?.first?[.status] as? Int
+            guard let value, let status = SCFrameStatus(rawValue: value) else { return }
+            lastScreenEventAt = now
+            switch status {
+            case .complete, .started:
+                guard CMSampleBufferGetImageBuffer(buffer) != nil else { return }
+                screenIsBlankOrSuspended = false
+                latestSourceBuffer = buffer
+                latestSourceFrameAt = now
+                appendVideoSample(buffer, at: now)
+            case .idle:
+                // This is NORMAL when nothing on the desktop has changed.
+                // Timer-generated samples extend the last visible image.
+                screenIsBlankOrSuspended = false
+            case .blank, .suspended, .stopped:
+                screenIsBlankOrSuspended = true
+                // Stop using the old still if the display went away. After
+                // unlock, the next real frame starts a fresh contiguous run.
+                latestSourceBuffer = nil
+                if active != nil { closeSegment() }
+            @unknown default:
+                break
+            }
+            return
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
-        guard pts.isValid else { return }
-        if type == .screen {
-            if let segment = active {
-                // Never bridge a long capture interruption inside one MOV file.
-                if now - segment.endedAt > 1.75 ||
-                   CMTimeGetSeconds(pts - segment.start) >= 3.0 {
-                    closeSegment()
-                }
+        guard pts.isValid, let segment = active,
+              CMTimeCompare(pts, segment.start) >= 0 else { return }
+        if type == .audio {
+            if let input = segment.system, input.isReadyForMoreMediaData {
+                _ = input.append(buffer)
             }
-            if active == nil && !isStopping {
-                do { active = try createSegment(start: pts) }
-                catch { report(error.localizedDescription); return }
-            }
-        }
-        guard let segment = active else { return }
-        if CMTimeCompare(pts, segment.start) < 0 { return }
-        if type == .screen {
-            if segment.video.isReadyForMoreMediaData {
-                if !segment.video.append(buffer) { report(segment.writer.error?.localizedDescription ?? "Video encode failed.") }
-                else { segment.last = pts; segment.endedAt = now }
-            }
-        } else if type == .audio {
-            if let input = segment.system, input.isReadyForMoreMediaData { _ = input.append(buffer) }
         } else if type == .microphone {
-            if let input = segment.microphone, input.isReadyForMoreMediaData { _ = input.append(buffer) }
+            if let input = segment.microphone, input.isReadyForMoreMediaData {
+                _ = input.append(buffer)
+            }
         }
     }
 
@@ -376,13 +460,17 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             case .ready(let ready):
                 indices = ready
             case .warmingUp(let available, let required):
-                let remaining = max(1, required - available)
-                let message = "Replay is filling: \(available) of \(required) seconds ready. " +
-                    "Keep recording for about \(remaining) more seconds, then try again."
-                DispatchQueue.main.async { self.onClip?(.failure(self.err(message))) }
-                NSLog("CLIP replay not ready: %d/%d seconds (uptime %.2f)",
-                      available, required, request.requestedAt)
-                continue
+                // On the first seconds after launch, save what's genuinely
+                // recorded, even though a full 30-second history does not yet exist.
+                guard let partial = ReplayWindowPolicy.availableNow(
+                    window, seconds: request.seconds, requestedAt: request.requestedAt)
+                else {
+                    let message = "CLIP is starting capture (\(available)/\(required)s). " +
+                        "Try the shortcut again in a moment."
+                    DispatchQueue.main.async { self.onClip?(.failure(self.err(message))) }
+                    continue
+                }
+                indices = partial
             case .stalled(let age):
                 let message = "No new screen footage for \(age) seconds. " +
                     "CLIP is reconnecting; press Start if capture is paused."
@@ -393,9 +481,12 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             let chosen = indices.map { finished[$0] }
             let urls = chosen.map(\.url)
             busyExports.formUnion(urls)
+            let availableSeconds = chosen.reduce(0.0) { $0 + $1.length }
+            let isShort = availableSeconds < Double(request.seconds) - 1.25
+            let shortLabel = isShort ? " - Short \(max(1, Int(availableSeconds.rounded())))s" : ""
             let output = clipsDirectory.appendingPathComponent(
                 "CLIP " + Self.fileDateFormatter.string(from: Date()) + " " +
-                UUID().uuidString.prefix(5) + ".mp4")
+                UUID().uuidString.prefix(5) + shortLabel + ".mp4")
             DispatchQueue.global(qos: .userInitiated).async {
                 Self.export(segments: chosen, seconds: request.seconds, output: output) { result in
                     self.queue.async {

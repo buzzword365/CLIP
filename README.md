@@ -13,12 +13,17 @@ Built with **SwiftUI**, **ScreenCaptureKit**, and **AVFoundation**. No accounts,
 - **Audio control:** Include system/game audio; optionally enable microphone recording.
 - **Quality settings:** 720p, 1080p, 1440p or native resolution; 30 or 60 FPS targets.
 - **Clip library:** Browse thumbnails, preview clips, show videos in Finder, and move unwanted recordings to Trash.
+- **Two-handle trim editor:** Open a saved clip and drag the start/end handles on the thumbnail timeline. Preview the selected segment and export a new MP4 with system audio; the original remains unchanged.
 - **Glass UI:** Translucent controls, trackpad haptics where supported, motion accessibility support.
 - **Menu bar:** Background capture, quick save/pause, and launch-at-login preference.
 - **Capture recovery:** Detects when screen frames stop updating, attempts to reconnect, and avoids a misleading duplicate clip. The dashboard shows buffer readiness (for example, `17/30s`) and a friendly explanation when a full fresh clip is not yet ready. If capture stops repeatedly (for example while the Mac is locked), open CLIP and press Start after waking it.
 - **Local files:** Saved videos live in `~/Movies/CLIP`.
 
 > **Preview release:** CLIP is an early project, not a production-equivalent replacement for Medal. Current capture uses the first available display rather than game-specific capture. Some games, protected videos, and system configurations may not capture perfectly. Microphone capture is selectable but has not been extensively field-tested.
+
+### Replay behaviour (v0.4.1)
+
+CLIP now handles unchanged desktops correctly: ScreenCaptureKit reports an *idle* frame instead of emitting another image when nothing changes. A lightweight timer extends the last visible frame with new timestamps, allowing normal 30-second replays even on static screens. Press **⌘ Shift S** to save the most recent selected duration; the saved video is never replaced with an older clip. After a fresh app launch, if fewer than 30 seconds have elapsed, CLIP saves the shorter amount recorded so far and labels the file as a short replay. Sleeping, locked or otherwise unavailable displays cannot be retrospectively recorded.
 
 ## Download and install
 

@@ -57,6 +57,37 @@ enum ReplayWindowPolicy {
                           required: seconds)
     }
 
+    /// Returns only recent, contiguous recording. If the app has been running
+    /// for less than the chosen replay duration, Cmd+Shift+S can still save
+    /// whatever footage exists rather than rejecting the shortcut.
+    static func availableNow(_ items: [ReplaySegmentInfo],
+                             seconds: Int,
+                             requestedAt: TimeInterval) -> [Int]? {
+        guard seconds > 0, requestedAt.isFinite, let last = items.last,
+              last.endedAt.isFinite,
+              requestedAt - last.endedAt <= 4,
+              requestedAt - last.endedAt >= -2 else { return nil }
+        var selected: [Int] = []
+        var mediaSeconds = 0.0
+        var nextStart: TimeInterval?
+        for index in items.indices.reversed() {
+            let item = items[index]
+            guard item.startedAt.isFinite, item.endedAt.isFinite,
+                  item.mediaDuration.isFinite, item.mediaDuration > 0,
+                  item.endedAt >= item.startedAt else { break }
+            if let nextStart {
+                let gap = nextStart - item.endedAt
+                guard gap >= -0.9 && gap <= 2.0 else { break }
+            }
+            selected.insert(index, at: 0)
+            nextStart = item.startedAt
+            mediaSeconds += item.mediaDuration
+            if mediaSeconds >= Double(seconds) - 1.25 { break }
+        }
+        guard mediaSeconds >= 0.5 else { return nil }
+        return selected
+    }
+
     static func choose(_ items: [ReplaySegmentInfo],
                        seconds: Int,
                        requestedAt: TimeInterval) -> [Int]? {

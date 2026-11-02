@@ -1,10 +1,11 @@
-# CLIP for macOS
+# CLIP
 
-![CLIP app icon](Assets/CLIPLogo.png)
+<img src="Assets/CLIPLogo.png" alt="CLIP app icon" width="88" />
 
-**Instant replay, designed for Mac.** CLIP is a lightweight native macOS app that keeps a short local recording buffer, then saves recent gameplay or desktop activity when you press **⌘ Shift S**.
+A native macOS instant replay utility. CLIP keeps a rolling screen-capture buffer and saves recent footage when you press **⌘ Shift S**. Preview, trim, and organise recordings without uploading them to a service.
 
-Built with **SwiftUI**, **ScreenCaptureKit**, and **AVFoundation**. No accounts, cloud uploads, analytics, or subscriptions are required for local clipping.
+**Stack:** SwiftUI · ScreenCaptureKit · AVFoundation  
+**Status:** Preview release · Apple Silicon · macOS 15+
 
 ## Features
 
@@ -81,7 +82,7 @@ build.sh           Portable Apple Silicon build script
 ## Known limitations
 
 - Captures the first detected display. Selecting specific windows/games isn't implemented.
-- No timeline editor, webcam overlay or automatic highlight detection yet.
+- No multi-track editor, webcam overlay or automatic highlight detection yet.
 - File format uses H.264/AAC. Frame rate and output dimensions depend on the captured display and system performance.
 - Mac screen and microphone permissions are controlled by macOS.
 - Advanced audio mixing and long-session stress testing need additional QA.

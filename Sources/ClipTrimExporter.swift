@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreImage
 
 enum ClipTrimError: LocalizedError {
     case invalidRange
@@ -17,12 +18,29 @@ enum ClipTrimError: LocalizedError {
     }
 }
 
+/// One effect for both the editor preview and exported video.
+/// Clamp edges before blurring so the entire frame is obscured without dark borders.
+enum ClipVideoEffects {
+    static func fullFrameBlur(for asset: AVAsset) -> AVVideoComposition {
+        AVVideoComposition(asset: asset, applyingCIFiltersWithHandler: { request in
+            let source = request.sourceImage
+            let bounds = source.extent
+            let radius = max(65.0, min(220.0, min(bounds.width, bounds.height) * 0.12))
+            let blurred = source.clampedToExtent()
+                .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius])
+                .cropped(to: bounds)
+            request.finish(with: blurred, context: nil)
+        })
+    }
+}
+
 /// Exports a new MP4. The original URL is never overwritten or deleted.
 /// Highest-quality re-encoding avoids inaccurate start points on non-keyframes.
 enum ClipTrimExporter {
     static func export(source: URL,
                        start: Double,
                        end: Double,
+                       blurEntireFrame: Bool = false,
                        outputDirectory: URL) async throws -> URL {
         guard source.isFileURL, start.isFinite, end.isFinite,
               start >= 0, end - start >= 0.25 else {
@@ -42,8 +60,9 @@ enum ClipTrimExporter {
         try FileManager.default.createDirectory(at: outputDirectory,
                                                 withIntermediateDirectories: true)
         let stem = source.deletingPathExtension().lastPathComponent
+        let effectSuffix = blurEntireFrame ? "Blurred" : "Trimmed"
         let out = outputDirectory.appendingPathComponent(
-            "\(stem) - Trimmed \(UUID().uuidString.prefix(6)).mp4")
+            "\(stem) - \(effectSuffix) \(UUID().uuidString.prefix(6)).mp4")
         guard let session = AVAssetExportSession(asset: asset,
                                                  presetName: AVAssetExportPresetHighestQuality) else {
             throw ClipTrimError.unavailableExporter
@@ -51,6 +70,9 @@ enum ClipTrimExporter {
         let startTime = CMTime(seconds: start, preferredTimescale: 60000)
         let endTime = CMTime(seconds: clampedEnd, preferredTimescale: 60000)
         session.timeRange = CMTimeRange(start: startTime, end: endTime)
+        if blurEntireFrame {
+            session.videoComposition = ClipVideoEffects.fullFrameBlur(for: asset)
+        }
         session.shouldOptimizeForNetworkUse = true
 
         do {

@@ -10,12 +10,12 @@ A native macOS instant replay utility. CLIP keeps a rolling screen-capture buffe
 ## Features
 
 - **Instant replay:** Press **⌘ Shift S** to save your recent footage as an MP4. CLIP verifies that the buffer is fresh rather than exporting old footage again.
-- **Rotary replay dial:** Choose 15 seconds, 30 seconds, 1, 2, 3, 5, or 10 minutes.
+- **Replay length controls:** Choose 15 seconds, 30 seconds, 1, 2, 3, 5, or 10 minutes.
 - **Audio control:** Include system/game audio; optionally enable microphone recording.
 - **Quality settings:** 720p, 1080p, 1440p or native resolution; 30 or 60 FPS targets.
 - **Clip library:** Browse thumbnails, preview clips, show videos in Finder, and move unwanted recordings to Trash.
-- **Two-handle trim editor:** Open a saved clip and drag the start/end handles on the thumbnail timeline. Preview the selected segment and export a new MP4 with system audio; the original remains unchanged.
-- **Glass UI:** Translucent controls, trackpad haptics where supported, motion accessibility support.
+- **Clip editor (trim + blur):** Open a saved clip and drag the start/end handles on the thumbnail timeline. Toggle **Blur** to obscure the entire video frame throughout the selected segment, both in the player preview and the exported MP4. The saved copy retains audio and leaves the original unchanged. Blurring is visual obfuscation, not a guarantee that sensitive information is unrecoverable.
+- **Clean macOS interface:** Graphite surfaces, simple replay controls, native typography, optional trackpad haptics and reduced visual effects.
 - **Menu bar:** Background capture, quick save/pause, and launch-at-login preference.
 - **Capture recovery:** Detects when screen frames stop updating, attempts to reconnect, and avoids a misleading duplicate clip. The dashboard shows buffer readiness (for example, `17/30s`) and a friendly explanation when a full fresh clip is not yet ready. If capture stops repeatedly (for example while the Mac is locked), open CLIP and press Start after waking it.
 - **Local files:** Saved videos live in `~/Movies/CLIP`.
@@ -36,7 +36,7 @@ Get the latest **CLIP-macOS-arm64** ZIP from [Releases](../../releases).
 4. CLIP will maintain a rolling recording buffer. Press **⌘ Shift S** to save a replay.
 5. Use Settings to change duration, microphone, quality, frame rate, notification and login options.
 
-**Requirements:** Apple Silicon Mac, macOS **15.0 or later**. Liquid Glass appearance is best on macOS 26.
+**Requirements:** Apple Silicon Mac, macOS **15.0 or later**.
 
 **Privacy:** CLIP captures only after macOS grants recording permission. It stores clips locally. Be considerate of other people's privacy and obtain appropriate consent.
 
@@ -55,7 +55,9 @@ zsh build.sh
 open ~/Applications/CLIP.app
 ```
 
-To sign the local build with a code-signing identity you own:
+The build script automatically uses the first installed **Apple Development** signing identity, when available, so screen-recording permissions can survive rebuilds. If none is installed, it falls back to ad-hoc signing; that can require renewed screen-recording permission after each update.
+
+To override the signing identity:
 
 ```bash
 CLIP_SIGN_IDENTITY="Your code signing identity" zsh build.sh

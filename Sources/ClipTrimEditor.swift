@@ -13,6 +13,7 @@ final class ClipTrimSession: ObservableObject {
     @Published var end = 0.0
     @Published var playhead = 0.0
     @Published var isPlaying = false
+    @Published var blurEnabled = false
     @Published var thumbnails: [NSImage] = []
     @Published var isExporting = false
     @Published var lastExport: URL?
@@ -118,6 +119,15 @@ final class ClipTrimSession: ObservableObject {
         isPlaying = false
     }
 
+    func toggleBlur() {
+        guard duration > 0, !isExporting else { return }
+        blurEnabled.toggle()
+        // Preview uses the same whole-frame Core Image effect as the exported MP4.
+        player.currentItem?.videoComposition = blurEnabled
+            ? ClipVideoEffects.fullFrameBlur(for: AVURLAsset(url: url))
+            : nil
+    }
+
     func reset() {
         guard duration > 0 else { return }
         pause()
@@ -135,12 +145,14 @@ final class ClipTrimSession: ObservableObject {
         let source = url
         let initial = start
         let final = end
+        let shouldBlur = blurEnabled
         Task { [weak self] in
             do {
                 let result = try await ClipTrimExporter.export(
                     source: source,
                     start: initial,
                     end: final,
+                    blurEntireFrame: shouldBlur,
                     outputDirectory: source.deletingLastPathComponent())
                 self?.lastExport = result
                 self?.isExporting = false
@@ -193,7 +205,7 @@ struct ClipTrimEditor: View {
     @StateObject private var session: ClipTrimSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let tint = Color(red: 0.55, green: 0.79, blue: 1)
+    private let tint = Color(red: 0.67, green: 0.78, blue: 0.87)
 
     init(clip: ClipItem,
          onClose: @escaping () -> Void,
@@ -214,8 +226,8 @@ struct ClipTrimEditor: View {
                     .background(.white.opacity(0.08),
                                 in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Trim clip")
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Text("Edit clip")
+                        .font(.system(size: 20, weight: .semibold))
                     Text(clip.name)
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.57))
@@ -239,10 +251,10 @@ struct ClipTrimEditor: View {
             }
 
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(Color.black.opacity(0.43))
                 TrimPlayerView(player: session.player)
-                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
                 if session.loading {
                     ProgressView("Loading clip…")
                         .padding(18)
@@ -255,11 +267,10 @@ struct ClipTrimEditor: View {
             VStack(alignment: .leading, spacing: 11) {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("SELECT MOMENT")
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(1.5)
+                        Text("Trim range")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.46))
-                        Text("Drag the left and right handles to choose what stays.")
+                        Text("Drag the handles to select a section.")
                             .font(.system(size: 12))
                             .foregroundStyle(.white.opacity(0.65))
                     }
@@ -281,17 +292,17 @@ struct ClipTrimEditor: View {
                 .foregroundStyle(.white.opacity(0.68))
             }
             .padding(18)
-            .background(.white.opacity(0.065),
-                        in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(.white.opacity(0.09), lineWidth: 1))
+            .background(.white.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1))
 
             HStack(spacing: 10) {
                 Button {
                     session.togglePlayback()
                     CLIPFeedback.tap()
                 } label: {
-                    Label(session.isPlaying ? "Pause preview" : "Play selected",
+                    Label(session.isPlaying ? "Pause" : "Play",
                           systemImage: session.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 12, weight: .semibold))
                 }
@@ -302,11 +313,22 @@ struct ClipTrimEditor: View {
                     session.reset()
                     CLIPFeedback.tap()
                 } label: {
-                    Label("Reset handles", systemImage: "arrow.counterclockwise")
+                    Label("Reset", systemImage: "arrow.counterclockwise")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(TactileGlassActionStyle())
                 .disabled(session.duration == 0 || session.isExporting)
+
+                Button {
+                    session.toggleBlur()
+                    CLIPFeedback.tap()
+                } label: {
+                    Label(session.blurEnabled ? "Blur on" : "Blur", systemImage: "drop.halffull")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .buttonStyle(TactileGlassActionStyle(prominent: session.blurEnabled))
+                .disabled(session.duration == 0 || session.isExporting)
+                .help("Blur the entire video frame for the whole saved clip")
 
                 Spacer()
 
@@ -319,7 +341,8 @@ struct ClipTrimEditor: View {
                         } else {
                             Image(systemName: "square.and.arrow.down")
                         }
-                        Text(session.isExporting ? "Exporting…" : "Save trimmed copy")
+                        Text(session.isExporting ? "Exporting…" :
+                             (session.blurEnabled ? "Save blurred copy" : "Save trimmed copy"))
                             .font(.system(size: 12, weight: .semibold))
                     }
                 }
@@ -337,7 +360,7 @@ struct ClipTrimEditor: View {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                    Text("Trimmed clip saved. Original unchanged.")
+                    Text("Clip saved. Original unchanged.")
                         .foregroundStyle(.white.opacity(0.85))
                     Spacer()
                     Button("Show in Finder") {
@@ -347,14 +370,14 @@ struct ClipTrimEditor: View {
                 }
                 .font(.system(size: 11))
             } else {
-                Text("Your original video will not be changed. Exports appear in your CLIP library.")
+                Text("Saving creates a copy. Your original clip stays unchanged.")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.44))
             }
         }
         .padding(22)
         .frame(width: 850)
-        .background(Color(red: 0.075, green: 0.10, blue: 0.16))
+        .background(Color(red: 0.075, green: 0.082, blue: 0.095))
         .preferredColorScheme(.dark)
         .task { await session.load() }
         .onDisappear { session.dispose() }
@@ -369,7 +392,7 @@ struct ClipTrimEditor: View {
             let cursor = CGFloat(session.playhead / total) * width
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(red: 0.14, green: 0.19, blue: 0.27))
+                    .fill(Color(red: 0.15, green: 0.16, blue: 0.18))
                 HStack(spacing: 1) {
                     ForEach(0..<10, id: \.self) { idx in
                         Group {
@@ -381,11 +404,8 @@ struct ClipTrimEditor: View {
                                     .resizable()
                                     .scaledToFill()
                             } else {
-                                Rectangle().fill(
-                                    LinearGradient(colors: [
-                                        tint.opacity(0.24),
-                                        Color(red: 0.17, green: 0.14, blue: 0.29)
-                                    ], startPoint: .top, endPoint: .bottom))
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.065))
                             }
                         }
                         .frame(width: max(1, (width - 9) / 10), height: 80)
@@ -437,13 +457,9 @@ struct ClipTrimEditor: View {
 
     private func handle(isStart: Bool, width: CGFloat) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(LinearGradient(
-                    colors: [Color(red: 0.77, green: 0.91, blue: 1),
-                             tint, Color(red: 0.28, green: 0.56, blue: 0.92)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing))
+            RoundedRectangle(cornerRadius: 4)
+                .fill(tint)
                 .frame(width: 17, height: 80)
-                .shadow(color: .black.opacity(0.4), radius: 6)
             HStack(spacing: 2) {
                 Capsule().fill(.white.opacity(0.86)).frame(width: 1.5, height: 19)
                 Capsule().fill(.white.opacity(0.86)).frame(width: 1.5, height: 19)

@@ -12,11 +12,13 @@ private enum CLIPArtwork {
 }
 
 private enum CLIPStyle {
-    static let accent = Color(red: 0.53, green: 0.76, blue: 1.0)
-    static let lavender = Color(red: 0.70, green: 0.64, blue: 1.0)
-    static let text = Color.white.opacity(0.94)
-    static let muted = Color.white.opacity(0.54)
-    static let border = Color.white.opacity(0.11)
+    // Neutral graphite palette, with one restrained blue-grey accent.
+    static let accent = Color(red: 0.67, green: 0.78, blue: 0.87)
+    static let text = Color.white.opacity(0.93)
+    static let muted = Color.white.opacity(0.55)
+    static let border = Color.white.opacity(0.085)
+    static let background = Color(red: 0.075, green: 0.082, blue: 0.095)
+    static let panel = Color(red: 0.115, green: 0.123, blue: 0.14)
 }
 
 private struct GlassWindowBackdrop: NSViewRepresentable {
@@ -50,28 +52,26 @@ private struct WindowChromeStyler: NSViewRepresentable {
 }
 
 private struct FloatingGlass: ViewModifier {
-    var radius: CGFloat = 20
+    var radius: CGFloat = 12
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-        } else {
-            content.background(.regularMaterial,
-                in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: radius).stroke(CLIPStyle.border, lineWidth: 1))
-        }
+        content
+            .background(CLIPStyle.panel, in: RoundedRectangle(cornerRadius: min(radius, 13)))
+            .overlay {
+                RoundedRectangle(cornerRadius: min(radius, 13))
+                    .strokeBorder(CLIPStyle.border, lineWidth: 1)
+            }
     }
 }
 
 private struct QuietSurface: ViewModifier {
-    var radius: CGFloat = 20
+    var radius: CGFloat = 12
     func body(content: Content) -> some View {
         content
-            .background(Color(red: 0.085, green: 0.105, blue: 0.15).opacity(0.72),
-                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(LinearGradient(colors: [
-                    .white.opacity(0.16), .white.opacity(0.025), .white.opacity(0.065)
-                ], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+            .background(CLIPStyle.panel, in: RoundedRectangle(cornerRadius: min(radius, 13)))
+            .overlay {
+                RoundedRectangle(cornerRadius: min(radius, 13))
+                    .strokeBorder(CLIPStyle.border, lineWidth: 1)
+            }
     }
 }
 
@@ -96,20 +96,16 @@ private struct ClipPreview: View {
                 Image(nsImage: thumbnail).resizable().scaledToFill()
             } else {
                 Rectangle()
-                    .fill(LinearGradient(colors: [
-                        Color(red: 0.17, green: 0.24, blue: 0.34),
-                        Color(red: 0.10, green: 0.11, blue: 0.20)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(Color(red: 0.18, green: 0.19, blue: 0.21))
                 Image(systemName: "play.rectangle")
-                    .font(.system(size: 31, weight: .ultraLight))
+                    .font(.system(size: 31, weight: .regular))
                     .foregroundStyle(.white.opacity(0.38))
             }
             Image(systemName: "play.fill")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 39, height: 39)
-                .background(.black.opacity(0.44), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.19)))
+                .frame(width: 37, height: 37)
+                .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 9))
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -152,9 +148,9 @@ struct CLIPView: View {
     var body: some View {
         ZStack {
             ambientBackground
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 25) {
                 sidebar
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 19) {
                     header
                     Group {
                         if page == .library { library }
@@ -163,25 +159,24 @@ struct CLIPView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     footer
                 }
-                .padding(.trailing, 16)
+                .padding(.top, 46)
+                .padding(.trailing, 24)
+                .padding(.bottom, 17)
             }
-            .padding(.top, 51)
-            .padding(.leading, 16)
-            .padding(.bottom, 16)
         }
         .background(WindowChromeStyler().frame(width: 0, height: 0))
         .overlay(alignment: .bottomTrailing) {
             if showSavedToast {
                 Label("Clip saved to your Mac", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.67, green: 0.98, blue: 0.82))
+                    .foregroundStyle(CLIPStyle.text)
                     .padding(.horizontal, 17).padding(.vertical, 12)
                     .modifier(FloatingGlass(radius: 17))
                     .padding(.trailing, 31).padding(.bottom, 37)
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    .transition(.opacity)
             }
         }
-        .frame(minWidth: 960, minHeight: 660)
+        .frame(minWidth: 920, minHeight: 640)
         .preferredColorScheme(.dark)
         .tint(CLIPStyle.accent)
         .sheet(item: $selectedClip) { clip in
@@ -235,126 +230,92 @@ struct CLIPView: View {
     }
 
     private var ambientBackground: some View {
-        GeometryReader { size in
-            ZStack {
-                if reduceTransparency {
-                    Color(red: 0.09, green: 0.12, blue: 0.17)
-                } else {
-                    GlassWindowBackdrop()
-                    Color(red: 0.045, green: 0.066, blue: 0.108).opacity(0.65)
-                    RadialGradient(colors: [
-                        CLIPStyle.accent.opacity(0.19), .clear
-                    ], center: .center, startRadius: 15, endRadius: 420)
-                    .frame(width: 670, height: 670)
-                    .position(x: size.size.width * 0.80, y: 12)
-                    RadialGradient(colors: [
-                        CLIPStyle.lavender.opacity(0.12), .clear
-                    ], center: .center, startRadius: 5, endRadius: 350)
-                    .frame(width: 620, height: 620)
-                    .position(x: 80, y: size.size.height * 0.98)
-                }
-            }
-        }
-        .ignoresSafeArea()
+        CLIPStyle.background
+            .ignoresSafeArea()
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
+            HStack(spacing: 10) {
                 Image(nsImage: CLIPArtwork.icon)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: 39, height: 39)
+                    .frame(width: 31, height: 31)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("CLIP")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .tracking(2.3)
-                    Text("INSTANT REPLAY")
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(CLIPStyle.muted)
-                }
+                Text("CLIP")
+                    .font(.system(size: 17, weight: .semibold))
+                    .tracking(0.2)
+                    .foregroundStyle(CLIPStyle.text)
             }
-            .padding(.bottom, 43)
-
-            Text("WORKSPACE")
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.5)
-                .foregroundStyle(.white.opacity(0.37))
-                .padding(.leading, 12)
-                .padding(.bottom, 11)
+            .padding(.bottom, 29)
 
             ForEach(CLIPPage.allCases, id: \.self) { item in
                 Button {
-                    withAnimation(.smooth(duration: 0.23)) { page = item }
+                    page = item
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 11) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 15, weight: .medium))
-                            .frame(width: 20)
+                            .font(.system(size: 14, weight: .regular))
+                            .frame(width: 19)
                         Text(item.rawValue)
-                            .font(.system(size: 13, weight: page == item ? .semibold : .medium))
-                        Spacer()
-                        if page == item {
-                            Circle().fill(CLIPStyle.accent).frame(width: 5, height: 5)
-                        }
+                            .font(.system(size: 13, weight: page == item ? .semibold : .regular))
+                        Spacer(minLength: 0)
                     }
                     .foregroundStyle(page == item ? CLIPStyle.text : CLIPStyle.muted)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 12)
-                    .background(page == item ? .white.opacity(0.105) : .clear,
-                        in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 10)
+                    .background(page == item ? Color.white.opacity(0.095) : .clear,
+                                in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(TactileSidebarButtonStyle())
-                .padding(.bottom, 5)
+                .padding(.bottom, 3)
             }
 
             Spacer(minLength: 20)
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: "keyboard")
-                        .font(.system(size: 12)).foregroundStyle(CLIPStyle.muted)
-                    Text("SAVE A MOMENT")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.05).foregroundStyle(CLIPStyle.muted)
-                }
+            VStack(alignment: .leading, spacing: 11) {
+                Text("SAVE SHORTCUT")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(0.7)
+                    .foregroundStyle(CLIPStyle.muted)
                 HStack(spacing: 5) {
                     keycap("⌘")
                     keycap("⇧")
                     keycap("S")
                 }
-                Text("\(durationLabel) replay")
-                    .font(.system(size: 11)).foregroundStyle(CLIPStyle.muted)
+                Text("Last \(durationLabel)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(CLIPStyle.muted)
             }
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .modifier(QuietSurface(radius: 16))
+            .padding(.bottom, 24)
 
             HStack(spacing: 7) {
                 Circle()
-                    .fill(model.running ? Color.green : Color.orange)
+                    .fill(model.running ? Color(red: 0.47, green: 0.75, blue: 0.59)
+                                        : Color.white.opacity(0.35))
                     .frame(width: 6, height: 6)
-                Text(model.running ? "Capture active" : "Capture paused")
-                    .font(.system(size: 11, weight: .medium))
+                Text(model.running ? "Recording" : "Paused")
+                    .font(.system(size: 11))
                     .foregroundStyle(CLIPStyle.muted)
             }
-            .padding(.top, 20)
-            .padding(.leading, 8)
         }
-        .padding(17)
-        .frame(width: 212)
+        .padding(.horizontal, 17)
+        .padding(.top, 48)
+        .padding(.bottom, 23)
+        .frame(width: 192)
         .frame(maxHeight: .infinity)
-        .modifier(FloatingGlass(radius: 23))
+        .background(Color.white.opacity(0.026))
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(CLIPStyle.border).frame(width: 1)
+        }
     }
 
     private func keycap(_ text: String) -> some View {
-        Text(text).font(.system(size: 15, weight: .medium, design: .rounded))
-            .frame(width: 31, height: 29)
-            .background(.white.opacity(0.095), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8)
+        Text(text).font(.system(size: 13, weight: .medium, design: .monospaced))
+            .frame(width: 28, height: 27)
+            .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(CLIPStyle.border))
     }
 
@@ -364,53 +325,49 @@ struct CLIPView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 13) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(page == .library ? "Your moments" : "Preferences")
-                    .font(.system(size: 31, weight: .semibold, design: .rounded))
-                    .tracking(-0.65)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(page == .library ? "Library" : "Settings")
+                    .font(.system(size: 27, weight: .semibold))
+                    .tracking(-0.5)
                     .foregroundStyle(CLIPStyle.text)
-                Text(page == .library
-                     ? "Keep what matters. Everything stays on your Mac."
-                     : "A personal setup for every session.")
-                    .font(.system(size: 12.5))
+                Text(page == .library ? "Capture and manage replays." : "Recording and app preferences.")
+                    .font(.system(size: 12))
                     .foregroundStyle(CLIPStyle.muted)
             }
             Spacer(minLength: 4)
-            Label(model.running ? "Recording" : "Paused",
-                  systemImage: model.running ? "circle.fill" : "pause.fill")
-                .labelStyle(.titleAndIcon)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(model.running ? Color(red: 0.60, green: 0.96, blue: 0.78) : CLIPStyle.muted)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
-                .modifier(FloatingGlass(radius: 30))
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(model.running ? Color(red: 0.47, green: 0.75, blue: 0.59) : CLIPStyle.muted)
+                    .frame(width: 6, height: 6)
+                Text(model.running ? "Recording" : "Paused")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CLIPStyle.muted)
+            }
+            .padding(.trailing, 8)
             Button {
                 if model.running { Task { await model.stop() } }
                 else { Task { await model.start() } }
             } label: {
                 Label(model.running ? "Pause" : "Start",
                       systemImage: model.running ? "pause.fill" : "record.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
             }
             .buttonStyle(TactileGlassActionStyle())
             .disabled(model.busy)
         }
-        .frame(height: 66)
-        .padding(.horizontal, 4)
+        .frame(height: 58)
     }
 
     private var library: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             hero
             HStack(spacing: 9) {
                 Text("Recent clips")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: 16, weight: .semibold))
                 Text("\(model.clips.count)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.system(size: 11))
                     .foregroundStyle(CLIPStyle.muted)
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(.white.opacity(0.09), in: Capsule())
                 Spacer()
                 if isSelectingClips {
                     Button(selectedClipIDs.count == model.clips.count ? "Deselect all" : "Select all") {
@@ -468,10 +425,10 @@ struct CLIPView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "film.stack")
                         .font(.system(size: 35, weight: .ultraLight))
-                        .foregroundStyle(CLIPStyle.accent.opacity(0.70))
-                    Text("It's quiet here")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Your saved replays will appear here.\nCapture a moment with ⌘⇧S.")
+                        .foregroundStyle(CLIPStyle.muted)
+                    Text("No clips yet")
+                        .font(.system(size: 15, weight: .medium))
+                    Text("Press ⌘⇧S while recording to save a replay.")
                         .font(.system(size: 12))
                         .foregroundStyle(CLIPStyle.muted)
                         .multilineTextAlignment(.center)
@@ -480,8 +437,8 @@ struct CLIPView: View {
                 .modifier(QuietSurface())
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 380), spacing: 15)],
-                              alignment: .leading, spacing: 15) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 380), spacing: 12)],
+                              alignment: .leading, spacing: 12) {
                         ForEach(model.clips) { clip in
                             Button {
                                 if isSelectingClips {
@@ -496,7 +453,7 @@ struct CLIPView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 0) {
                                     ClipPreview(url: clip.url)
-                                        .clipShape(RoundedRectangle(cornerRadius: 13))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
                                         .overlay(alignment: .topTrailing) {
                                             if isSelectingClips {
                                                 Image(systemName: selectedClipIDs.contains(clip.id)
@@ -508,7 +465,7 @@ struct CLIPView: View {
                                                     .padding(14)
                                             }
                                         }
-                                        .padding(8)
+                                        .padding(7)
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 5) {
                                             Text(clip.name)
@@ -531,15 +488,15 @@ struct CLIPView: View {
                                     .padding(.bottom, 13)
                                     .padding(.top, 4)
                                 }
-                                .modifier(QuietSurface(radius: 19))
-                                .overlay(RoundedRectangle(cornerRadius: 19)
+                                .modifier(QuietSurface(radius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12)
                                     .strokeBorder(selectedClipIDs.contains(clip.id) && isSelectingClips
                                                   ? CLIPStyle.accent.opacity(0.86) : .clear,
                                                   lineWidth: 1.8))
                             }
                             .buttonStyle(TactileClipCardStyle())
                             .contextMenu {
-                                Button("Open trim editor") { selectedClip = clip }
+                                Button("Open clip editor") { selectedClip = clip }
                                 Button("Show in Finder") {
                                     NSWorkspace.shared.activateFileViewerSelecting([clip.url])
                                 }
@@ -556,88 +513,89 @@ struct CLIPView: View {
     }
 
     private var hero: some View {
-        HStack(spacing: 22) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(model.running ? Color.green : .orange)
-                        .frame(width: 6, height: 6)
-                    Text(model.running ? "READY WHEN YOU ARE" : "CAPTURE IS PAUSED")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.55)
+        VStack(alignment: .leading, spacing: 19) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Replay capture")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(CLIPStyle.text)
+                    Text("Save the last \(durationLabel) from your screen.")
+                        .font(.system(size: 12.5))
                         .foregroundStyle(CLIPStyle.muted)
                 }
-                Text("Never miss a\nmoment.")
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    .tracking(-0.7)
-                    .lineSpacing(0)
-                    .foregroundStyle(CLIPStyle.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Instantly save your last \(durationLabel) of gameplay.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(CLIPStyle.muted)
-                HStack(spacing: 7) {
-                    Image(systemName: model.bufferedSeconds >= model.replayTargetSeconds && model.running
-                          ? "checkmark.circle.fill" : "clock.arrow.circlepath")
-                        .foregroundStyle(model.bufferedSeconds >= model.replayTargetSeconds && model.running
-                                         ? Color.green : CLIPStyle.accent)
-                    Text(model.running
-                         ? (model.bufferedSeconds >= model.replayTargetSeconds
-                            ? "Replay ready"
-                            : "Recording • \(model.bufferedSeconds)s available")
-                         : "Recording paused")
-                        .foregroundStyle(CLIPStyle.muted)
-                }
-                .font(.system(size: 11, weight: .medium))
-                .accessibilityLabel(model.running
-                    ? "\(model.bufferedSeconds) of \(model.replayTargetSeconds) replay seconds available"
-                    : "Recording paused")
-                HStack(spacing: 10) {
-                    Button { model.saveReplay() } label: {
-                        HStack(spacing: 7) {
-                            if model.isSaving {
-                                ProgressView().controlSize(.mini)
-                            } else {
-                                Image(systemName: "square.and.arrow.down")
-                            }
-                            Text(model.isSaving ? "Saving…" : "Save replay")
-                                .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button { model.saveReplay() } label: {
+                    HStack(spacing: 7) {
+                        if model.isSaving {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "square.and.arrow.down")
                         }
+                        Text(model.isSaving ? "Saving…" : "Save replay")
+                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .buttonStyle(TactileGlassActionStyle(prominent: true))
-                    .disabled(!model.running || model.isSaving)
-                    HStack(spacing: 5) {
-                        Text("⌘").font(.system(size: 12, weight: .medium))
-                        Text("⇧").font(.system(size: 12, weight: .medium))
-                        Text("S").font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(TactileGlassActionStyle(prominent: true))
+                .disabled(!model.running || model.isSaving)
+                .help("Save the selected replay length · ⌘⇧S")
+            }
+            HStack(spacing: 10) {
+                Text("Replay length")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(CLIPStyle.muted)
+                Spacer(minLength: 8)
+                ForEach([15, 30, 60, 120, 180, 300, 600], id: \.self) { length in
+                    Button {
+                        seconds = length
+                    } label: {
+                        Text(length < 60 ? "\(length)s" : "\(length / 60)m")
+                            .font(.system(size: 11, weight: seconds == length ? .semibold : .medium))
+                            .foregroundStyle(seconds == length ? CLIPStyle.text : CLIPStyle.muted)
+                            .frame(minWidth: 29)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 8)
+                            .background(seconds == length ? Color.white.opacity(0.13) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 7))
                     }
-                    .foregroundStyle(CLIPStyle.muted)
-                }.padding(.top, 3)
+                    .buttonStyle(TactileSegmentButtonStyle())
+                    .accessibilityLabel("Replay \(length < 60 ? "\(length) seconds" : "\(length / 60) minutes")")
+                }
             }
-            Spacer(minLength: 4)
-            VStack(spacing: 5) {
-                ReplayDurationDial(seconds: $seconds)
-                    .help("Drag the outer ring clockwise or anticlockwise to change replay length.")
-                Text("DRAG TO ADJUST")
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(1.2)
+            .padding(5)
+            .background(Color.black.opacity(0.20), in: RoundedRectangle(cornerRadius: 9))
+
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(model.running ? Color(red: 0.47, green: 0.75, blue: 0.59) : CLIPStyle.muted)
+                    .frame(width: 6, height: 6)
+                Text(model.running
+                    ? (model.bufferedSeconds >= model.replayTargetSeconds
+                        ? "Replay ready"
+                        : "Buffering · \(model.bufferedSeconds) of \(model.replayTargetSeconds) seconds")
+                    : "Capture paused")
+                    .font(.system(size: 11))
+                    .foregroundStyle(CLIPStyle.muted)
+                Spacer()
+                Text("⌘⇧S")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(CLIPStyle.muted)
             }
-            .frame(width: 206)
+            .accessibilityLabel(model.running
+                ? "\(model.bufferedSeconds) of \(model.replayTargetSeconds) replay seconds available"
+                : "Recording paused")
         }
-        .padding(.horizontal, 26)
-        .padding(.vertical, 24)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(QuietSurface(radius: 23))
+        .modifier(QuietSurface())
     }
 
     private var settings: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 15) {
                 settingsCard("Instant replay", symbol: "clock.arrow.circlepath", note: "Choose how far back your clips go.") {
-                    Text("SAVE THE LAST")
+                    Text("Save the last")
                         .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.15).foregroundStyle(CLIPStyle.muted)
+                        .foregroundStyle(CLIPStyle.muted)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 65), spacing: 8)], spacing: 8) {
                         ForEach([15, 30, 60, 120, 180, 300, 600], id: \.self) { length in
                             Button {
@@ -649,13 +607,11 @@ struct CLIPView: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
                                     .background(length == seconds
-                                        ? CLIPStyle.accent.opacity(0.27)
-                                        : .white.opacity(0.05),
-                                        in: RoundedRectangle(cornerRadius: 11))
-                                    .overlay(RoundedRectangle(cornerRadius: 11)
-                                        .strokeBorder(length == seconds
-                                            ? CLIPStyle.accent.opacity(0.4)
-                                            : CLIPStyle.border))
+                                        ? Color.white.opacity(0.13)
+                                        : .white.opacity(0.04),
+                                        in: RoundedRectangle(cornerRadius: 7))
+                                    .overlay(RoundedRectangle(cornerRadius: 7)
+                                        .strokeBorder(CLIPStyle.border))
                             }.buttonStyle(TactileSegmentButtonStyle())
                         }
                     }
@@ -693,7 +649,7 @@ struct CLIPView: View {
                 }
                 .font(.system(size: 12.5))
 
-                settingsCard("Application", symbol: "switch.2", note: "Little things that make CLIP yours.") {
+                settingsCard("Application", symbol: "switch.2", note: "General preferences.") {
                     Toggle("Clip saved notifications", isOn: $showNotifications)
                     Divider().overlay(.white.opacity(0.07))
                     Toggle("Launch at login", isOn: $launchAtLogin)
@@ -745,11 +701,10 @@ struct CLIPView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 15))
-                    .foregroundStyle(CLIPStyle.accent)
-                    .frame(width: 32, height: 32)
-                    .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(CLIPStyle.muted)
+                    .frame(width: 25, height: 25)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(title).font(.system(size: 14, weight: .semibold))
                     Text(note).font(.system(size: 11)).foregroundStyle(CLIPStyle.muted)
                 }
                 Spacer()
@@ -758,20 +713,20 @@ struct CLIPView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .modifier(QuietSurface(radius: 19))
+        .modifier(QuietSurface())
     }
 
     private var footer: some View {
         HStack(spacing: 9) {
-            Image(systemName: "waveform.path")
+            Image(systemName: "info.circle")
                 .font(.system(size: 11))
-                .foregroundStyle(CLIPStyle.accent)
+                .foregroundStyle(CLIPStyle.muted)
             Text(model.message)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Image(systemName: "lock.shield")
-            Text("Private · On this Mac")
+            Image(systemName: "lock")
+            Text("Stored locally")
         }
         .font(.system(size: 10.5, weight: .medium))
         .foregroundStyle(CLIPStyle.muted)

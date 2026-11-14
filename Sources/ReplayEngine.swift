@@ -481,12 +481,14 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             let chosen = indices.map { finished[$0] }
             let urls = chosen.map(\.url)
             busyExports.formUnion(urls)
-            let availableSeconds = chosen.reduce(0.0) { $0 + $1.length }
-            let isShort = availableSeconds < Double(request.seconds) - 1.25
-            let shortLabel = isShort ? " - Short \(max(1, Int(availableSeconds.rounded())))s" : ""
-            let output = clipsDirectory.appendingPathComponent(
-                "CLIP " + Self.fileDateFormatter.string(from: Date()) + " " +
-                UUID().uuidString.prefix(5) + shortLabel + ".mp4")
+            let output: URL
+            do {
+                output = try ClipFileNamer.nextURL(in: clipsDirectory)
+            } catch {
+                busyExports.subtract(urls)
+                DispatchQueue.main.async { self.onClip?(.failure(error)) }
+                continue
+            }
             DispatchQueue.global(qos: .userInitiated).async {
                 Self.export(segments: chosen, seconds: request.seconds, output: output) { result in
                     self.queue.async {
@@ -502,12 +504,6 @@ final class ReplayEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
     }
-
-    private static let fileDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH-mm-ss"
-        return f
-    }()
 
     private static func export(segments: [Segment], seconds: Int, output: URL,
                                completion: @escaping (Result<URL, Error>) -> Void) {

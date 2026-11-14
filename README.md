@@ -13,7 +13,7 @@ A native macOS instant replay utility. CLIP keeps a rolling screen-capture buffe
 - **Replay length controls:** Choose 15 seconds, 30 seconds, 1, 2, 3, 5, or 10 minutes.
 - **Audio control:** Include system/game audio; optionally enable microphone recording.
 - **Quality settings:** 720p, 1080p, 1440p or native resolution; 30 or 60 FPS targets.
-- **Clip library:** Browse thumbnails, preview clips, show videos in Finder, and move unwanted recordings to Trash.
+- **Clip library:** Browse thumbnails, preview clips, show videos in Finder, and move unwanted recordings to Trash. New replays and edited exports are named sequentially, such as `clip001-2026-12-12.mp4`, `clip002-2026-12-12.mp4`. Numbering continues across app launches; existing recordings are not renamed.
 - **Clip editor (trim + blur):** Open a saved clip and drag the start/end handles on the thumbnail timeline. Toggle **Blur** to obscure the entire video frame throughout the selected segment, both in the player preview and the exported MP4. The saved copy retains audio and leaves the original unchanged. Blurring is visual obfuscation, not a guarantee that sensitive information is unrecoverable.
 - **Clean macOS interface:** Graphite surfaces, simple replay controls, native typography, optional trackpad haptics and reduced visual effects.
 - **Menu bar:** Background capture, quick save/pause, and launch-at-login preference.
@@ -24,7 +24,7 @@ A native macOS instant replay utility. CLIP keeps a rolling screen-capture buffe
 
 ### Replay behaviour (v0.4.1)
 
-CLIP now handles unchanged desktops correctly: ScreenCaptureKit reports an *idle* frame instead of emitting another image when nothing changes. A lightweight timer extends the last visible frame with new timestamps, allowing normal 30-second replays even on static screens. Press **⌘ Shift S** to save the most recent selected duration; the saved video is never replaced with an older clip. After a fresh app launch, if fewer than 30 seconds have elapsed, CLIP saves the shorter amount recorded so far and labels the file as a short replay. Sleeping, locked or otherwise unavailable displays cannot be retrospectively recorded.
+CLIP now handles unchanged desktops correctly: ScreenCaptureKit reports an *idle* frame instead of emitting another image when nothing changes. A lightweight timer extends the last visible frame with new timestamps, allowing normal 30-second replays even on static screens. Press **⌘ Shift S** to save the most recent selected duration; the saved video is never replaced with an older clip. After a fresh app launch, if fewer than 30 seconds have elapsed, CLIP saves the shorter amount recorded so far with the same sequential filename format. Sleeping, locked or otherwise unavailable displays cannot be retrospectively recorded.
 
 ## Download and install
 

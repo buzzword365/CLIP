@@ -59,10 +59,7 @@ enum ClipTrimExporter {
         let clampedEnd = min(end, duration)
         try FileManager.default.createDirectory(at: outputDirectory,
                                                 withIntermediateDirectories: true)
-        let stem = source.deletingPathExtension().lastPathComponent
-        let effectSuffix = blurEntireFrame ? "Blurred" : "Trimmed"
-        let out = outputDirectory.appendingPathComponent(
-            "\(stem) - \(effectSuffix) \(UUID().uuidString.prefix(6)).mp4")
+        let out = try ClipFileNamer.nextURL(in: outputDirectory)
         guard let session = AVAssetExportSession(asset: asset,
                                                  presetName: AVAssetExportPresetHighestQuality) else {
             throw ClipTrimError.unavailableExporter
